@@ -29,4 +29,5 @@ plt.xlabel("Time (s)")
 plt.title("Micro-Doppler Spectrogram")
 
 plt.colorbar(label="Power (dB)")
-plt.show()
+plt.savefig("spectrogram.png")
+print("Spectrogram saved.")
