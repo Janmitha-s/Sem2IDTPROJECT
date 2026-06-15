@@ -1,0 +1,30 @@
+[
+  {
+    "target_id": 0,
+    "position_m": [
+      55,
+      60
+    ],
+    "assigned_drone": "DroneB_3",
+    "drone_position_m": [
+      50,
+      50
+    ],
+    "distance_to_drone_m": 11.180339887498949,
+    "recording_file": "reflected_signal_DroneB_3.csv"
+  },
+  {
+    "target_id": 1,
+    "position_m": [
+      25,
+      30
+    ],
+    "assigned_drone": "DroneB_1",
+    "drone_position_m": [
+      20,
+      20
+    ],
+    "distance_to_drone_m": 11.180339887498949,
+    "recording_file": "reflected_signal_DroneB_1.csv"
+  }
+]
