@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bistatic LoRa SAR — Mesh Collision &amp; Survivor Detection</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root{
+  --bg:#03070a;
+  --bg-panel:#061309;
+  --bg-card:#071108;
+  --green:#2bf07a;
+  --green-dim:#0e5c34;
+  --green-faint:rgba(43,240,122,0.16);
+  --border:rgba(56,255,140,0.28);
+  --border-soft:rgba(56,255,140,0.14);
+  --amber:#ffb020;
+  --amber-dim:#5c3d0e;
+  --cyan:#39d6ff;
+  --magenta:#ff5fa8;
+  --red:#ff4d5e;
+  --text-dim:#5d8d72;
+  --mono:'JetBrains Mono', ui-monospace, 'Courier New', monospace;
+}
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(circle at 50% 0%, rgba(43,240,122,0.05), transparent 60%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 3px),
+    var(--bg);
+  color:var(--green);
+  font-family:var(--mono);
+  min-height:100vh;
+  padding:18px;
+}
+
+.app{max-width:1440px;margin:0 auto;}
+
+/* ---------- TOP BAR ---------- */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  border:1px solid var(--border);border-radius:6px;
+  background:linear-gradient(180deg, rgba(43,240,122,0.06), transparent);
+  padding:14px 20px;margin-bottom:10px;flex-wrap:wrap;gap:10px;
+}
+.brand{font-weight:700;font-size:18px;letter-spacing:1px;color:var(--green);text-shadow:0 0 12px rgba(43,240,122,0.5);}
+.brand span{color:var(--text-dim);font-weight:400;}
+.brand small{display:block;font-size:10px;font-weight:400;color:var(--text-dim);letter-spacing:2px;margin-top:2px;}
+.tabs{display:flex;gap:8px;}
+.tab{
+  background:transparent;border:1px solid var(--border-soft);color:var(--text-dim);
+  font-family:var(--mono);font-size:11px;letter-spacing:1.5px;font-weight:600;
+  padding:9px 18px;border-radius:4px;cursor:pointer;transition:all .2s;
+}
+.tab:hover{color:var(--green);border-color:var(--border);}
+.tab.active{
+  background:var(--green-faint);color:var(--green);border-color:var(--green);
+  box-shadow:0 0 14px rgba(43,240,122,0.25) inset;
+}
+
+.breadcrumb{
+  font-size:10px;letter-spacing:2px;color:var(--text-dim);padding:6px 4px 14px;
+  border-bottom:1px solid var(--border-soft);margin-bottom:14px;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
+.breadcrumb b{color:var(--green);font-weight:600;}
+.breadcrumb .sep{color:var(--green-dim);}
+.pulse-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 1.6s infinite;}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.25;}}
+
+/* ---------- LAYOUT ---------- */
+.main{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;align-items:start;}
+@media(max-width:980px){.main{grid-template-columns:1fr;}}
+
+.panel{
+  background:var(--bg-panel);border:1px solid var(--border);border-radius:6px;
+  padding:18px;
+}
+.panel-header{
+  font-size:12px;letter-spacing:2px;color:var(--green);font-weight:600;
+  margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;
+}
+.panel-header .right-meta{font-size:9px;color:var(--text-dim);letter-spacing:1px;font-weight:400;}
+
+/* ---------- RADAR SCOPE ---------- */
+.scope-wrap{
+  position:relative;width:100%;aspect-ratio:1/1;max-height:560px;margin:0 auto;
+}
+.radar-svg{width:100%;height:100%;display:block;}
+.sweep{animation:spin 5s linear infinite;transform-origin:300px 300px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+.controls-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+.btn{
+  background:transparent;border:1px solid var(--border);color:var(--green);
+  font-family:var(--mono);font-size:11px;letter-spacing:1px;font-weight:600;
+  padding:10px 14px;border-radius:4px;cursor:pointer;transition:all .15s;
+  display:flex;align-items:center;gap:6px;
+}
+.btn:hover{background:var(--green-faint);box-shadow:0 0 10px rgba(43,240,122,0.25);}
+.btn.is-active{background:var(--green-faint);box-shadow:0 0 10px rgba(43,240,122,0.3) inset;}
+.btn.warn{color:var(--amber);border-color:rgba(255,176,32,0.4);}
+.btn.warn:hover{background:rgba(255,176,32,0.1);}
+.btn.danger{color:var(--magenta);border-color:rgba(255,95,168,0.4);}
+.btn.danger:hover{background:rgba(255,95,168,0.1);}
+
+/* ---------- RIGHT COLUMN / CARDS ---------- */
+.right-col{display:flex;flex-direction:column;gap:14px;}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:16px;}
+
+.status-pill{
+  width:100%;text-align:center;padding:13px;border-radius:4px;font-weight:700;
+  font-size:14px;letter-spacing:2px;margin-bottom:14px;border:1px solid;transition:all .3s;
+}
+.status-pill.ok{color:var(--green);border-color:var(--green);background:rgba(43,240,122,0.08);box-shadow:0 0 16px rgba(43,240,122,0.12) inset;}
+.status-pill.warn{color:var(--amber);border-color:var(--amber);background:rgba(255,176,32,0.08);box-shadow:0 0 16px rgba(255,176,32,0.12) inset;}
+.status-pill.alert{color:var(--red);border-color:var(--red);background:rgba(255,77,94,0.08);box-shadow:0 0 16px rgba(255,77,94,0.15) inset;animation:flash 1s infinite;}
+.status-pill.info{color:var(--cyan);border-color:var(--cyan);background:rgba(57,214,255,0.08);box-shadow:0 0 16px rgba(57,214,255,0.12) inset;}
+@keyframes flash{0%,100%{opacity:1;}50%{opacity:.55;}}
+
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.stat-box{border:1px solid var(--border-soft);border-radius:4px;padding:12px 10px;text-align:center;background:rgba(43,240,122,0.03);}
+.stat-box .val{font-size:21px;font-weight:700;color:var(--green);text-shadow:0 0 10px rgba(43,240,122,0.35);}
+.stat-box .lbl{font-size:9px;color:var(--text-dim);letter-spacing:1.5px;margin-top:4px;}
+
+.pipeline-list{display:flex;flex-direction:column;gap:6px;}
+.pipeline-step{
+  display:flex;align-items:center;gap:10px;border:1px solid var(--border-soft);border-radius:4px;
+  padding:9px 12px;font-size:11px;letter-spacing:0.5px;color:var(--text-dim);transition:all .25s;
+}
+.pipeline-step b{color:inherit;font-weight:600;opacity:.8;}
+.pipeline-step.active{
+  color:var(--green);border-color:var(--green);background:var(--green-faint);
+  box-shadow:0 0 12px rgba(43,240,122,0.18) inset;
+}
+
+.data-list{max-height:300px;overflow-y:auto;padding-right:4px;}
+.data-list::-webkit-scrollbar{width:6px;}
+.data-list::-webkit-scrollbar-track{background:rgba(43,240,122,0.05);border-radius:3px;}
+.data-list::-webkit-scrollbar-thumb{background:var(--green-dim);border-radius:3px;}
+
+.data-entry{border-bottom:1px solid var(--border-soft);padding:11px 2px;}
+.data-entry:last-child{border-bottom:none;}
+.data-entry-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;}
+.data-entry-head .id{font-weight:700;font-size:12px;color:var(--green);letter-spacing:1px;}
+.data-entry-head .status{font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 7px;border-radius:3px;}
+.status.clear{color:var(--green);background:rgba(43,240,122,0.1);}
+.status.conflict{color:var(--red);background:rgba(255,77,94,0.12);}
+.status.likely{color:var(--cyan);background:rgba(57,214,255,0.1);}
+.status.located{color:var(--green);background:rgba(43,240,122,0.15);}
+.status.noise{color:var(--text-dim);background:rgba(93,141,114,0.1);}
+.data-row{display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);padding:2px 0;}
+.data-row span:last-child{color:var(--green);font-weight:600;}
+
+/* ---------- HEATMAP (TAB 2) ---------- */
+.heat-wrap{position:relative;width:100%;aspect-ratio:1/1;max-height:560px;margin:0 auto;border:1px solid var(--border-soft);border-radius:4px;overflow:hidden;background:#020503;}
+.heat-grid{position:absolute;inset:0;display:grid;}
+.heat-cell{border:1px solid rgba(43,240,122,0.05);position:relative;}
+.heat-cell .ping{position:absolute;inset:0;border-radius:50%;}
+.scan-sweep-h{position:absolute;left:0;width:100%;height:26%;background:linear-gradient(180deg, transparent, rgba(43,240,122,0.16), transparent);animation:sweepdown 3.4s linear infinite;pointer-events:none;}
+@keyframes sweepdown{0%{top:-26%;}100%{top:100%;}}
+.drone-icon{position:absolute;width:11px;height:11px;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px currentColor;transition:left .55s linear, top .55s linear;}
+.drone-icon::after{content:attr(data-label);position:absolute;top:-15px;left:50%;transform:translateX(-50%);font-size:8px;letter-spacing:1px;white-space:nowrap;color:inherit;}
+.best-cell-marker{position:absolute;border:1.5px solid var(--green);border-radius:3px;pointer-events:none;transition:left .55s linear, top .55s linear, width .55s, height .55s;box-shadow:0 0 14px rgba(43,240,122,0.5);}
+
+.hidden{display:none !important;}
+
+.footer-note{margin-top:16px;font-size:10px;color:var(--text-dim);letter-spacing:0.5px;line-height:1.6;border-top:1px solid var(--border-soft);padding-top:12px;}
+.footer-note b{color:var(--green);}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="topbar">
+    <div class="brand">MESHGRID <span>// LoRa Bistatic Ops Console</span>
+      <small>SINGLE TX · SINGLE RX · NO DEDICATED RADAR HARDWARE</small>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="radar">▣ MESH RADAR</button>
+      <button class="tab" data-tab="detect">▣ SURVIVOR DETECTION</button>
+    </div>
+  </div>
+
+  <!-- ============ TAB 1 : MESH COLLISION RADAR ============ -->
+  <div id="view-radar">
+    <div class="breadcrumb">
+      <span class="pulse-dot"></span>
+      <b>LORA MESH SYNC</b><span class="sep">›</span>
+      DISTANCE <span class="sep">›</span> VECTOR <span class="sep">›</span> KINEMATICS <span class="sep">›</span> EXTRAPOLATION <span class="sep">›</span> RESOLUTION
+    </div>
+
+    <div class="main">
+      <div class="panel">
+        <div class="panel-header">▸ RADAR SCOPE — LIVE MESH FEED <span class="right-meta" id="r-time">SCAN 000</span></div>
+        <div class="scope-wrap">
+          <svg viewBox="0 0 600 600" class="radar-svg">
+            <circle cx="300" cy="300" r="280" fill="none" stroke="var(--border-soft)" stroke-width="1"/>
+            <circle cx="300" cy="300" r="187" fill="none" stroke="var(--border-soft)" stroke-width="1"/>
+            <circle cx="300" cy="300" r="94" fill="none" stroke="var(--border-soft)" stroke-width="1"/>
+            <line x1="300" y1="20" x2="300" y2="580" stroke="var(--border-soft)" stroke-width="1"/>
+            <line x1="20" y1="300" x2="580" y2="300" stroke="var(--border-soft)" stroke-width="1"/>
+            <defs>
+              <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#2bf07a" stop-opacity="0.32"/>
+                <stop offset="100%" stop-color="#2bf07a" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g class="sweep">
+              <path d="M300,300 L300,20 A280,280 0 0,1 542,160 Z" fill="url(#sweepGrad)"/>
+            </g>
+            <g id="drones1-layer"></g>
+          </svg>
+        </div>
+        <div class="controls-row">
+          <button class="btn" id="r-pause">⏸ PAUSE</button>
+          <button class="btn warn" id="r-collision">⚠ COLLISION SCENARIO</button>
+          <button class="btn" id="r-nearmiss">◇ NEAR MISS</button>
+          <button class="btn" id="r-add">✦ ADD DRONE</button>
+          <button class="btn" id="r-reset">↺ RESET</button>
+        </div>
+      </div>
+
+      <div class="right-col">
+        <div class="card">
+          <div class="panel-header">▸ MESH STATUS</div>
+          <div class="status-pill ok" id="r-status-pill">✓ ALL CLEAR</div>
+          <div class="stat-grid">
+            <div class="stat-box"><div class="val" id="r-stat-count">3</div><div class="lbl">DRONES</div></div>
+            <div class="stat-box"><div class="val" id="r-stat-mindist">—</div><div class="lbl">MIN DIST (nm)</div></div>
+            <div class="stat-box"><div class="val" id="r-stat-conflicts">0</div><div class="lbl">CONFLICTS</div></div>
+            <div class="stat-box"><div class="val" id="r-stat-cycle">0</div><div class="lbl">SCAN CYCLE</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-header">▸ ACTIVE PIPELINE</div>
+          <div class="pipeline-list" id="r-pipeline">
+            <div class="pipeline-step" data-i="0"><b>01</b> Distance Check</div>
+            <div class="pipeline-step" data-i="1"><b>02</b> Vector Analysis</div>
+            <div class="pipeline-step" data-i="2"><b>03</b> Kinematics</div>
+            <div class="pipeline-step" data-i="3"><b>04</b> Path Extrapolation</div>
+            <div class="pipeline-step" data-i="4"><b>05</b> Collision Check</div>
+            <div class="pipeline-step" data-i="5"><b>06</b> Resolution</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-header">▸ DRONE DATA</div>
+          <div class="data-list" id="r-data-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <b>How it works:</b> each drone broadcasts a LoRa ping for mesh time-sync. Position, heading and closing-rate are derived from successive pings and fed through the pipeline at right to flag converging trajectories before they become a conflict.
+    </div>
+  </div>
+
+  <!-- ============ TAB 2 : SURVIVOR DETECTION ============ -->
+  <div id="view-detect" class="hidden">
+    <div class="breadcrumb">
+      <span class="pulse-dot"></span>
+      <b>BISTATIC PASSIVE RADAR</b><span class="sep">›</span>
+      LORA TX <span class="sep">›</span> BISTATIC RX <span class="sep">›</span> DOPPLER FFT <span class="sep">›</span> BREATHING/HEARTBEAT FILTER <span class="sep">›</span> BAYESIAN FUSION
+    </div>
+
+    <div class="main">
+      <div class="panel">
+        <div class="panel-header">▸ PROBABILITY MAP — TERRAIN SCAN <span class="right-meta" id="d-time">SCAN 000</span></div>
+        <div class="heat-wrap" id="d-heatwrap">
+          <div class="heat-grid" id="d-grid"></div>
+          <div class="scan-sweep-h"></div>
+          <div class="best-cell-marker" id="d-best-marker"></div>
+          <div id="d-drones-layer"></div>
+        </div>
+        <div class="controls-row">
+          <button class="btn" id="d-pause">⏸ PAUSE</button>
+          <button class="btn warn" id="d-boost">⚡ BOOST SIGNAL</button>
+          <button class="btn" id="d-weak">◇ WEAK SIGNAL / INTERFERENCE</button>
+          <button class="btn" id="d-add">✦ ADD SEARCH DRONE</button>
+          <button class="btn" id="d-reset">↺ RESET SEARCH</button>
+        </div>
+      </div>
+
+      <div class="right-col">
+        <div class="card">
+          <div class="panel-header">▸ DETECTION STATUS</div>
+          <div class="status-pill warn" id="d-status-pill">◌ SEARCHING</div>
+          <div class="stat-grid">
+            <div class="stat-box"><div class="val" id="d-stat-prob">5%</div><div class="lbl">PROB. OF DETECTION</div></div>
+            <div class="stat-box"><div class="val" id="d-stat-snr">—</div><div class="lbl">BEST CELL SNR (dB)</div></div>
+            <div class="stat-box"><div class="val" id="d-stat-breath">—</div><div class="lbl">BREATHING (bpm)</div></div>
+            <div class="stat-box"><div class="val" id="d-stat-heart">—</div><div class="lbl">HEART RATE (bpm)</div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-header">▸ SIGNAL PIPELINE</div>
+          <div class="pipeline-list" id="d-pipeline">
+            <div class="pipeline-step" data-i="0"><b>01</b> LoRa TX Ping</div>
+            <div class="pipeline-step" data-i="1"><b>02</b> Bistatic RX Capture</div>
+            <div class="pipeline-step" data-i="2"><b>03</b> Micro-Doppler FFT</div>
+            <div class="pipeline-step" data-i="3"><b>04</b> Breathing Filter 0.2–0.5Hz</div>
+            <div class="pipeline-step" data-i="4"><b>05</b> Heartbeat Filter 1–1.7Hz</div>
+            <div class="pipeline-step" data-i="5"><b>06</b> Bayesian Fusion</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-header">▸ CANDIDATE SIGNATURES</div>
+          <div class="data-list" id="d-data-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      <b>How it works:</b> one drone's LoRa ping reflects off the terrain below; a second drone listens for the echo and runs it through a Doppler FFT. Chest-wall motion from breathing and heartbeat shows up as a faint periodic shift in that echo — the system fuses repeated, noisy detections per grid cell into a single rising probability of detection.
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const $ = (s,r)=> (r||document).querySelector(s);
+  const $$ = (s,r)=> Array.from((r||document).querySelectorAll(s));
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand=(a,b)=>a+Math.random()*(b-a);
+
+  /* ============================================================
+     TAB SWITCHING
+  ============================================================ */
+  $$('.tab').forEach(t=>{
+    t.addEventListener('click', ()=>{
+      $$('.tab').forEach(x=>x.classList.remove('active'));
+      t.classList.add('active');
+      const tab = t.dataset.tab;
+      $('#view-radar').classList.toggle('hidden', tab!=='radar');
+      $('#view-detect').classList.toggle('hidden', tab!=='detect');
+    });
+  });
+
+  /* ============================================================
+     TAB 1 — MESH COLLISION RADAR
+  ============================================================ */
+  const SCALE = 280/65; // px per nm
+  const CX=300, CY=300, MAXR=65;
+  const colors1 = ['#39d6ff','#ffb020','#ff5fa8','#2bf07a','#a0e8ff'];
+  let drones1 = [];
+  let r_paused=false, r_cycle=0, r_pipeIdx=0;
+
+  function mkDrone(id, color){
+    const ang = rand(0, Math.PI*2);
+    const r = rand(10, 58);
+    return {
+      id, color,
+      x: Math.cos(ang)*r, y: Math.sin(ang)*r,
+      heading: rand(0,360),
+      speed: rand(0.35,0.7),
+      alt: Math.round(rand(80,420)),
+      conflict:false
+    };
+  }
+  function initDrones1(){
+    drones1 = [ mkDrone('DRN-01',colors1[0]), mkDrone('DRN-02',colors1[1]), mkDrone('DRN-03',colors1[2]) ];
+  }
+  initDrones1();
+
+  function stepDrone(d){
+    const rad = d.heading*Math.PI/180;
+    d.x += Math.cos(rad)*d.speed;
+    d.y += Math.sin(rad)*d.speed;
+    d.heading += rand(-2,2);
+    const dist = Math.hypot(d.x,d.y);
+    if(dist > MAXR){
+      const ang = Math.atan2(d.y,d.x) + Math.PI; // re-enter opposite side
+      d.x = Math.cos(ang)*MAXR*0.96;
+      d.y = Math.sin(ang)*MAXR*0.96;
+      d.heading = (Math.atan2(-d.y,-d.x)*180/Math.PI) + rand(-25,25);
+    }
+  }
+
+  function renderDrones1(){
+    const layer = $('#drones1-layer');
+    let svg = '';
+    let minDist = Infinity, conflictPairs = 0;
+    drones1.forEach(d=>d.conflict=false);
+    for(let i=0;i<drones1.length;i++){
+      for(let j=i+1;j<drones1.length;j++){
+        const dd = Math.hypot(drones1[i].x-drones1[j].x, drones1[i].y-drones1[j].y);
+        if(dd<minDist) minDist=dd;
+        if(dd < 7){ drones1[i].conflict=true; drones1[j].conflict=true; conflictPairs++; }
+      }
+    }
+    drones1.forEach(d=>{
+      const px = CX + d.x*SCALE, py = CY + d.y*SCALE;
+      const rad = d.heading*Math.PI/180;
+      const tx = px - Math.cos(rad)*15, ty = py - Math.sin(rad)*15;
+      const col = d.conflict ? '#ff4d5e' : d.color;
+      svg += `<line x1="${tx}" y1="${ty}" x2="${px}" y2="${py}" stroke="${col}" stroke-width="2" opacity="0.55"/>`;
+      svg += `<circle cx="${px}" cy="${py}" r="6" fill="${col}" style="filter:drop-shadow(0 0 4px ${col})"/>`;
+      svg += `<text x="${px+10}" y="${py-6}" fill="${col}" font-size="11" font-family="monospace" font-weight="700">${d.id}</text>`;
+      svg += `<text x="${px+10}" y="${py+8}" fill="${col}" font-size="9" font-family="monospace" opacity="0.75">FL${d.alt}</text>`;
+    });
+    layer.innerHTML = svg;
+    return {minDist: isFinite(minDist)?minDist:null, conflictPairs};
+  }
+
+  function renderDataList1(){
+    const wrap = $('#r-data-list');
+    wrap.innerHTML = drones1.map(d=>{
+      const status = d.conflict ? 'conflict' : 'clear';
+      const label = d.conflict ? 'CONFLICT' : 'CLEAR';
+      return `<div class="data-entry">
+        <div class="data-entry-head"><span class="id">${d.id}</span><span class="status ${status}">${label}</span></div>
+        <div class="data-row"><span>POS</span><span>${d.x.toFixed(1)}, ${d.y.toFixed(1)} nm</span></div>
+        <div class="data-row"><span>ALT</span><span>FL${d.alt}</span></div>
+        <div class="data-row"><span>SPD</span><span>${Math.round(d.speed*120)} kt</span></div>
+        <div class="data-row"><span>HDG</span><span>${Math.round(((d.heading%360)+360)%360)}°</span></div>
+      </div>`;
+    }).join('');
+  }
+
+  function tickRadar(){
+    if(r_paused) return;
+    r_cycle++;
+    drones1.forEach(stepDrone);
+    const {minDist, conflictPairs} = renderDrones1();
+    renderDataList1();
+
+    $('#r-time').textContent = 'SCAN ' + String(r_cycle).padStart(3,'0');
+    $('#r-stat-cycle').textContent = r_cycle;
+    $('#r-stat-count').textContent = drones1.length;
+    $('#r-stat-mindist').textContent = minDist!==null ? minDist.toFixed(1) : '—';
+    $('#r-stat-conflicts').textContent = conflictPairs;
+
+    const pill = $('#r-status-pill');
+    if(conflictPairs>0){
+      pill.className='status-pill alert';
+      pill.textContent='⚠ CONFLICT DETECTED';
+    } else {
+      pill.className='status-pill ok';
+      pill.textContent='✓ ALL CLEAR';
+    }
+
+    r_pipeIdx = (r_pipeIdx+1) % 6;
+    $$('#r-pipeline .pipeline-step').forEach(el=>{
+      el.classList.toggle('active', conflictPairs>0 ? true : (parseInt(el.dataset.i)===r_pipeIdx));
+    });
+  }
+
+  $('#r-pause').addEventListener('click', (e)=>{
+    r_paused = !r_paused;
+    e.currentTarget.classList.toggle('is-active', r_paused);
+    e.currentTarget.textContent = r_paused ? '▶ RESUME' : '⏸ PAUSE';
+  });
+  $('#r-reset').addEventListener('click', ()=>{ initDrones1(); r_cycle=0; });
+  $('#r-add').addEventListener('click', ()=>{
+    const n = drones1.length+1;
+    drones1.push(mkDrone('DRN-0'+n, colors1[(n-1)%colors1.length]));
+  });
+  $('#r-collision').addEventListener('click', ()=>{
+    if(drones1.length<2) return;
+    const a=drones1[0], b=drones1[1];
+    const midx=(a.x+b.x)/2, midy=(a.y+b.y)/2;
+    a.heading = Math.atan2(midy-a.y, midx-a.x)*180/Math.PI;
+    b.heading = Math.atan2(midy-b.y, midx-b.x)*180/Math.PI;
+    a.speed=0.8; b.speed=0.8;
+  });
+  $('#r-nearmiss').addEventListener('click', ()=>{
+    if(drones1.length<2) return;
+    const a=drones1[0], b=drones1[1];
+    const tx = b.x + rand(8,12), ty = b.y + rand(8,12);
+    a.heading = Math.atan2(ty-a.y, tx-a.x)*180/Math.PI;
+    a.speed=0.7;
+  });
+
+  /* ============================================================
+     TAB 2 — SURVIVOR DETECTION (bistatic micro-Doppler)
+  ============================================================ */
+  const N = 12; // grid resolution
+  let belief = new Array(N*N).fill(0).map(()=>rand(0.5,2));
+  let trueCell = {x: Math.floor(rand(0,N)), y: Math.floor(rand(0,N))};
+  let drones2 = [];
+  let d_paused=false, d_cycle=0, d_pipeIdx=0, d_overallProb=5;
+
+  function mkSearchDrone(id,color,phase){
+    return { id, color, r: rand(2.5,5), t: rand(0,Math.PI*2), speedT: rand(0.05,0.09), phase, x:0,y:0 };
+  }
+  function initDrones2(){
+    drones2 = [ mkSearchDrone('SRC-01','#39d6ff',0), mkSearchDrone('SRC-02','#ffb020',2.1) ];
+  }
+  function resetSearch(){
+    belief = new Array(N*N).fill(0).map(()=>rand(0.5,2));
+    trueCell = {x: Math.floor(rand(0,N)), y: Math.floor(rand(0,N))};
+    d_overallProb = 5; d_cycle = 0;
+    initDrones2();
+  }
+  resetSearch();
+
+  function buildGridDOM(){
+    const grid = $('#d-grid');
+    grid.style.gridTemplateColumns = `repeat(${N}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${N}, 1fr)`;
+    grid.innerHTML = '';
+    for(let i=0;i<N*N;i++){
+      const c = document.createElement('div');
+      c.className='heat-cell';
+      c.dataset.i = i;
+      grid.appendChild(c);
+    }
+  }
+  buildGridDOM();
+
+  function cellLabel(x,y){
+    return String.fromCharCode(65+y) + (x+1);
+  }
+
+  function stepDrones2(){
+    const cx = N/2, cy = N/2;
+    drones2.forEach(d=>{
+      d.t += d.speedT;
+      d.x = clamp(cx + Math.cos(d.t)*(cx-1), 0, N-1);
+      d.y = clamp(cy + Math.sin(d.t*0.8 + d.phase)*(cy-1), 0, N-1);
+    });
+  }
+
+  function updateBelief(){
+    const sigma = 1.6;
+    // ambient decay so old noise fades
+    for(let i=0;i<belief.length;i++) belief[i] *= 0.985;
+
+    let minDist = Infinity;
+    drones2.forEach(d=>{
+      const dist = Math.hypot(d.x-trueCell.x, d.y-trueCell.y);
+      if(dist<minDist) minDist=dist;
+    });
+    const proximity = Math.max(0, 1 - minDist/(N*0.55));
+    const gain = proximity*2.4 + 0.04;
+
+    // deposit gaussian bump centered at trueCell, scaled by gain + noise
+    for(let y=0;y<N;y++){
+      for(let x=0;x<N;x++){
+        const dsq = (x-trueCell.x)**2 + (y-trueCell.y)**2;
+        const g = Math.exp(-dsq/(2*sigma*sigma));
+        const idx = y*N+x;
+        belief[idx] += g*gain*rand(0.6,1.3);
+        belief[idx] += Math.random()*0.04; // sensor noise floor
+        belief[idx] = clamp(belief[idx], 0, 999);
+      }
+    }
+    return proximity;
+  }
+
+  function renderHeat(){
+    const cells = $$('#d-grid .heat-cell');
+    const maxB = Math.max(...belief, 1);
+    let bestIdx=0, bestVal=-1;
+    belief.forEach((v,i)=>{ if(v>bestVal){bestVal=v; bestIdx=i;} });
+    cells.forEach((c,i)=>{
+      const v = belief[i]/maxB;
+      const isTrue = i===bestIdx;
+      c.style.background = `rgba(43,240,122,${(v*0.85).toFixed(3)})`;
+      c.style.boxShadow = isTrue ? `inset 0 0 6px rgba(43,240,122,${0.4+v*0.4})` : 'none';
+    });
+
+    const wrap = $('#d-heatwrap');
+    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const cw = w/N, ch = h/N;
+    const bx = bestIdx % N, by = Math.floor(bestIdx/N);
+    const marker = $('#d-best-marker');
+    marker.style.left = (bx*cw)+'px';
+    marker.style.top = (by*ch)+'px';
+    marker.style.width = cw+'px';
+    marker.style.height = ch+'px';
+
+    const dl = $('#d-drones-layer');
+    dl.innerHTML = drones2.map(d=>{
+      const left = (d.x+0.5)*cw, top=(d.y+0.5)*ch;
+      return `<div class="drone-icon" data-label="${d.id}" style="left:${left}px;top:${top}px;background:${d.color};color:${d.color}"></div>`;
+    }).join('');
+
+    return {bestIdx, bestVal, bx, by};
+  }
+
+  function renderCandidates2(bestIdx){
+    const idxs = belief.map((v,i)=>[v,i]).sort((a,b)=>b[0]-a[0]).slice(0,4);
+    const maxB = Math.max(...belief,1);
+    const list = $('#d-data-list');
+    list.innerHTML = idxs.map(([v,i],rank)=>{
+      const x=i%N, y=Math.floor(i/N);
+      const conf = clamp((v/maxB)*d_overallProb + (rank===0?0:0), 0, 99);
+      const isPrimary = i===bestIdx;
+      let status='noise', label='UNCONFIRMED';
+      if(isPrimary && d_overallProb>70){status='located'; label='SURVIVOR LOCATED';}
+      else if(isPrimary && d_overallProb>35){status='likely'; label='LIKELY';}
+      else if(rank>0 && conf<15){status='noise'; label='NOISE';}
+      else {status='likely'; label='WEAK';}
+
+      const breathing = isPrimary ? (12+Math.sin(d_cycle*0.25)*2+rand(-0.4,0.4)).toFixed(1) : (rand(8,22)).toFixed(1);
+      const heart = isPrimary ? (68+rand(-3,3)).toFixed(0) : (rand(40,110)).toFixed(0);
+      const snr = isPrimary ? (10+d_overallProb*0.22+rand(-1,1)).toFixed(1) : (rand(-8,3)).toFixed(1);
+
+      return `<div class="data-entry">
+        <div class="data-entry-head"><span class="id">CELL ${cellLabel(x,y)}</span><span class="status ${status}">${label}</span></div>
+        <div class="data-row"><span>SNR</span><span>${snr} dB</span></div>
+        <div class="data-row"><span>BREATHING</span><span>${breathing} bpm</span></div>
+        <div class="data-row"><span>HEART RATE</span><span>${heart} bpm</span></div>
+        <div class="data-row"><span>CONFIDENCE</span><span>${conf.toFixed(0)}%</span></div>
+      </div>`;
+    }).join('');
+  }
+
+  function tickDetect(){
+    if(d_paused) return;
+    d_cycle++;
+    stepDrones2();
+    const proximity = updateBelief();
+    const {bestIdx,bx,by} = renderHeat();
+
+    // asymptotic approach toward 100, with noise + decay
+    const gain = proximity*1.6*(1 - d_overallProb/100) + 0.03*(1-d_overallProb/100);
+    d_overallProb += gain;
+    d_overallProb += rand(-0.3,0.3);
+    d_overallProb -= 0.04; // slow forgetting
+    d_overallProb = clamp(d_overallProb, 0, 99);
+
+    renderCandidates2(bestIdx);
+
+    $('#d-time').textContent = 'SCAN ' + String(d_cycle).padStart(3,'0');
+    $('#d-stat-prob').textContent = d_overallProb.toFixed(0)+'%';
+    $('#d-stat-snr').textContent = (8+d_overallProb*0.24).toFixed(1);
+
+    const pill = $('#d-status-pill');
+    if(d_overallProb<25){
+      pill.className='status-pill warn'; pill.textContent='◌ SEARCHING';
+      $('#d-stat-breath').textContent='—'; $('#d-stat-heart').textContent='—';
+    } else if(d_overallProb<55){
+      pill.className='status-pill info'; pill.textContent='◌ WEAK SIGNAL';
+      $('#d-stat-breath').textContent='—'; $('#d-stat-heart').textContent='—';
+    } else if(d_overallProb<80){
+      pill.className='status-pill info'; pill.textContent='◎ CANDIDATE LOCKED';
+      $('#d-stat-breath').textContent=(12+Math.sin(d_cycle*0.25)*2).toFixed(1);
+      $('#d-stat-heart').textContent=(68+rand(-2,2)).toFixed(0);
+    } else {
+      pill.className='status-pill ok'; pill.textContent='✓ SURVIVOR LOCATED';
+      $('#d-stat-breath').textContent=(12+Math.sin(d_cycle*0.25)*2).toFixed(1);
+      $('#d-stat-heart').textContent=(68+rand(-2,2)).toFixed(0);
+    }
+
+    d_pipeIdx = (d_pipeIdx+1) % 6;
+    $$('#d-pipeline .pipeline-step').forEach(el=>{
+      el.classList.toggle('active', d_overallProb>80 ? true : (parseInt(el.dataset.i)===d_pipeIdx));
+    });
+  }
+
+  $('#d-pause').addEventListener('click', (e)=>{
+    d_paused = !d_paused;
+    e.currentTarget.classList.toggle('is-active', d_paused);
+    e.currentTarget.textContent = d_paused ? '▶ RESUME' : '⏸ PAUSE';
+  });
+  $('#d-reset').addEventListener('click', resetSearch);
+  $('#d-add').addEventListener('click', ()=>{
+    const n = drones2.length+1;
+    const cols=['#39d6ff','#ffb020','#ff5fa8','#2bf07a'];
+    drones2.push(mkSearchDrone('SRC-0'+n, cols[(n-1)%cols.length], rand(0,6)));
+  });
+  $('#d-boost').addEventListener('click', ()=>{ d_overallProb = clamp(d_overallProb+14, 0, 99); });
+  $('#d-weak').addEventListener('click', ()=>{ d_overallProb = clamp(d_overallProb-12, 0, 99); });
+
+  /* ============================================================
+     MAIN LOOP
+  ============================================================ */
+  setInterval(()=>{
+    tickRadar();
+    tickDetect();
+  }, 700);
+
+})();
+</script>
+</body>
+</html>
